@@ -95,6 +95,7 @@ if (empty($_SESSION['id']) && empty($_SESSION['name']) && empty($_SESSION['surna
                                                     $cause1 = isset($_POST['cause']) ? $_POST['cause'] : 'ขาดเรียน';
                                                     $cause2 = isset($_POST['cause']) ? $_POST['cause'] : 'ลาป่วย';
                                                     $cause3 = isset($_POST['cause']) ? $_POST['cause'] : 'ลากิจ';
+                                                    $cause4 = isset($_POST['cause']) ? $_POST['cause'] : 'หนีเรียน';
 
                                                     require_once 'connect.php';
 
@@ -107,7 +108,7 @@ if (empty($_SESSION['id']) && empty($_SESSION['name']) && empty($_SESSION['surna
                                                         $sql .= " AND DATE(c.time) BETWEEN :startDate AND :endDate";
                                                     }
 
-                                                    $sql .= " AND (c.cause = :cause1 OR c.cause = :cause2 OR c.cause = :cause3)";
+                                                    $sql .= " AND (c.cause = :cause1 OR c.cause = :cause2 OR c.cause = :cause3 OR c.cause = :cause4)";
 
                                                     $sql .= " GROUP BY c.absent ORDER BY 
                                                     s.tb_student_degree ASC, 
@@ -125,6 +126,7 @@ if (empty($_SESSION['id']) && empty($_SESSION['name']) && empty($_SESSION['surna
                                                     $stmt->bindParam(':cause1', $cause1);
                                                     $stmt->bindParam(':cause2', $cause2);
                                                     $stmt->bindParam(':cause3', $cause3);
+                                                    $stmt->bindParam(':cause4', $cause4);
 
                                                     $stmt->execute();
 

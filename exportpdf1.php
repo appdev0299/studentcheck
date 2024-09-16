@@ -4,12 +4,18 @@ require('fpdf186/fpdf.php');
 $selectedCourse = isset($_GET['course']) ? $_GET['course'] : '';
 $startDate = isset($_GET['startDate']) ? $_GET['startDate'] : date('Y-m-d');
 $endDate = isset($_GET['endDate']) ? $_GET['endDate'] : date('Y-m-d');
-$cause1 = isset($_GET['cause']) ? $_GET['cause'] : 'ขาดเรียน';
-$cause2 = isset($_GET['cause']) ? $_GET['cause'] : 'ลาป่วย';
-$cause3 = isset($_GET['cause']) ? $_GET['cause'] : 'ลากิจ';
+$cause1 = 'ขาดเรียน';
+$cause2 = 'ลาป่วย';
+$cause3 = 'ลากิจ';
+$cause4 = 'หนีเรียน';
 
 require_once 'connect.php';
-$sql = "SELECT s.tb_student_tname, s.tb_student_name, s.tb_student_sname,s.tb_student_sex,s.tb_student_degree, c.absent, COUNT(c.absent) as count 
+
+$sql = "SELECT s.tb_student_tname, s.tb_student_name, s.tb_student_sname, s.tb_student_sex, s.tb_student_degree, s.tb_student_code,
+        SUM(CASE WHEN c.cause = :cause1 THEN 1 ELSE 0 END) AS count_absent,
+        SUM(CASE WHEN c.cause = :cause2 THEN 1 ELSE 0 END) AS count_sick_leave,
+        SUM(CASE WHEN c.cause = :cause3 THEN 1 ELSE 0 END) AS count_leave,
+        SUM(CASE WHEN c.cause = :cause4 THEN 1 ELSE 0 END) AS count_skip
 FROM ck_checking c
 JOIN ck_students s ON c.absent = s.tb_student_code
 WHERE 1=1 ";
@@ -22,16 +28,17 @@ if ($startDate && $endDate) {
     $sql .= " AND DATE(c.time) BETWEEN :startDate AND :endDate";
 }
 
-if ($cause1 || $cause2 || $cause3) {
-    $sql .= " AND (c.cause = :cause1 OR c.cause = :cause2 OR c.cause = :cause3)";
-}
-
 $sql .= " GROUP BY c.absent ORDER BY 
           s.tb_student_degree ASC, 
           s.tb_student_sex ASC, 
           c.absent ASC";
 
 $stmt = $conn->prepare($sql);
+
+$stmt->bindParam(':cause1', $cause1);
+$stmt->bindParam(':cause2', $cause2);
+$stmt->bindParam(':cause3', $cause3);
+$stmt->bindParam(':cause4', $cause4);
 
 if ($selectedCourse) {
     $stmt->bindParam(':courseCode', $selectedCourse);
@@ -42,14 +49,7 @@ if ($startDate && $endDate) {
     $stmt->bindParam(':endDate', $endDate);
 }
 
-if ($cause1 || $cause2 || $cause3) {
-    $stmt->bindParam(':cause1', $cause1);
-    $stmt->bindParam(':cause2', $cause2);
-    $stmt->bindParam(':cause3', $cause3);
-}
-
 $stmt->execute();
-
 $students = $stmt->fetchAll(PDO::FETCH_ASSOC);
 $roomMapping = [
     1 => 'ม.1/1',
@@ -73,7 +73,7 @@ $roomMapping = [
 ];
 
 
-$pdf = new FPDF('P', 'mm', 'A4');
+$pdf = new FPDF('L', 'mm', 'A4');
 $pdf->AddPage();
 $pdf->AddFont('THSarabunPSK', '', 'THSarabunPSK.php');
 $pdf->AddFont('THSarabunBoldPSK', '', 'THSarabunBoldPSK.php');
@@ -84,68 +84,92 @@ if (count($students) > 0) {
     $pdf->Cell(0, 1, iconv('utf-8', 'cp874', 'SAC - 1'), 0, 1, 'R');
     $pdf->SetFont('THSarabunBoldPSK', '', '18');
     $pdf->Cell(0, 7, iconv('utf-8', 'cp874', 'รายงานการขาดเรียน'), 0, 1, 'C');
-    require_once 'connect.php';
-    if (isset($_GET['studentCode'])) {
-        $studentCode = $_GET['studentCode'];
-        $sqlStudent = "SELECT tb_student_tname, tb_student_name, tb_student_sname, tb_student_degree 
-                       FROM ck_students 
-                       WHERE tb_student_code = :studentCode
-                       ORDER BY tb_student_sex ASC";
-        $stmtStudent = $conn->prepare($sqlStudent);
-        $stmtStudent->bindParam(':studentCode', $studentCode);
-        $stmtStudent->execute();
-        $studentData = $stmtStudent->fetch(PDO::FETCH_ASSOC);
-    }
+
     function formatDateThai($date)
     {
         $dateTime = new DateTime($date);
         $thaiMonths = array(
-            'มกราคม', 'กุมภาพันธ์', 'มีนาคม',
-            'เมษายน', 'พฤษภาคม', 'มิถุนายน',
-            'กรกฎาคม', 'สิงหาคม', 'กันยายน',
-            'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
+            'มกราคม',
+            'กุมภาพันธ์',
+            'มีนาคม',
+            'เมษายน',
+            'พฤษภาคม',
+            'มิถุนายน',
+            'กรกฎาคม',
+            'สิงหาคม',
+            'กันยายน',
+            'ตุลาคม',
+            'พฤศจิกายน',
+            'ธันวาคม'
         );
         $formattedDateThai = $dateTime->format('d') . ' ' . $thaiMonths[$dateTime->format('m') - 1] . ' ' . ($dateTime->format('Y') + 543);
         return $formattedDateThai;
     }
+
     $startDateFormattedThai = formatDateThai($startDate);
     $endDateFormattedThai = formatDateThai($endDate);
-    $pdf->Cell(0, 7, iconv('utf-8', 'cp874', 'ระหว่างวันที่: ' . $startDateFormattedThai . '  ถึงวันที่: ' . $endDateFormattedThai), 0, 1, 'C');
+    $pdf->Cell(0, 7, iconv('utf-8', 'cp874', 'ระหว่างวันที่: ' . $startDateFormattedThai . ' ถึงวันที่: ' . $endDateFormattedThai), 0, 1, 'C');
     $pdf->Cell(0, 7, iconv('utf-8', 'cp874', ''), 0, 1, 'C');
 
     $pdf->SetFont('THSarabunBoldPSK', '', 16);
-    $pdf->Cell(10, 8, iconv('utf-8', 'cp874', 'ลำดับ'), 1, 0, 'C');
+    $pdf->Cell(15, 8, iconv('utf-8', 'cp874', 'ลำดับ'), 1, 0, 'C');
     $pdf->Cell(30, 8, iconv('utf-8', 'cp874', 'รหัสนักเรียน'), 1, 0, 'C');
-    $pdf->Cell(100, 8, iconv('utf-8', 'cp874', 'ชื่อ-นามสกุล'), 1, 0, 'C');
+    $pdf->Cell(75, 8, iconv('utf-8', 'cp874', 'ชื่อ-นามสกุล'), 1, 0, 'C');
     $pdf->Cell(25, 8, iconv('utf-8', 'cp874', 'ระดับชั้น'), 1, 0, 'C');
-    $pdf->Cell(25, 8, iconv('utf-8', 'cp874', 'จำนวนคาบ'), 1, 1, 'C');
+    $pdf->Cell(25, 8, iconv('utf-8', 'cp874', 'ลาป่วย'), 1, 0, 'C');
+    $pdf->Cell(25, 8, iconv('utf-8', 'cp874', 'ลากิจ'), 1, 0, 'C');
+    $pdf->Cell(25, 8, iconv('utf-8', 'cp874', 'ขาดเรียน'), 1, 0, 'C');
+    $pdf->Cell(25, 8, iconv('utf-8', 'cp874', 'หนีเรียน'), 1, 0, 'C');
+    $pdf->Cell(25, 8, iconv('utf-8', 'cp874', 'รวม'), 1, 1, 'C');
 
     $pdf->SetFont('THSarabunPSK', '', 16);
     $counter = 1;
-    $processedStudents = array();
-    $totalCount = 0;
-
+    $totalSickLeaveCount = 0;
+    $totalLeaveCount = 0;
+    $totalAbsentCount = 0;
+    $totalSkipCount = 0;
 
     foreach ($students as $student) {
-        if (!in_array($student['absent'], $processedStudents)) {
-            $processedStudents[] = $student['absent'];
-            $pdf->Cell(10, 8, iconv('utf-8', 'cp874', $counter), 1, 0, 'C');
-            $pdf->Cell(30, 8, iconv('utf-8', 'cp874', $student['absent']), 1, 0, 'C');
-            $pdf->Cell(100, 8, iconv('utf-8', 'cp874', $student['tb_student_tname'] . ' ' . $student['tb_student_name'] . ' ' . $student['tb_student_sname']), 1, 0, 'L');
-            $pdf->Cell(25, 8, iconv('utf-8', 'cp874', $roomMapping[$student['tb_student_degree']]), 1, 0, 'C');
-            $pdf->Cell(25, 8, $student['count'], 1, 1, 'C');
-            $totalCount += $student['count'];
+        $pdf->Cell(15, 8, iconv('utf-8', 'cp874', $counter), 1, 0, 'C');
+        $pdf->Cell(30, 8, iconv('utf-8', 'cp874', $student['tb_student_code']), 1, 0, 'C');
+        $pdf->Cell(75, 8, iconv('utf-8', 'cp874', $student['tb_student_tname'] . ' ' . $student['tb_student_name'] . ' ' . $student['tb_student_sname']), 1, 0, 'L');
+        $degree = isset($roomMapping[$student['tb_student_degree']]) ? $roomMapping[$student['tb_student_degree']] : 'ไม่ระบุ';
+        $pdf->Cell(25, 8, iconv('utf-8', 'cp874', $degree), 1, 0, 'C');
 
-            $counter++;
-        }
+        // ใช้เครื่องหมาย - แทนค่าศูนย์
+        $sickLeave = $student['count_sick_leave'] == 0 ? '-' : $student['count_sick_leave'];
+        $leave = $student['count_leave'] == 0 ? '-' : $student['count_leave'];
+        $absent = $student['count_absent'] == 0 ? '-' : $student['count_absent'];
+        $skip = $student['count_skip'] == 0 ? '-' : $student['count_skip'];
+
+        $pdf->Cell(25, 8, iconv('utf-8', 'cp874', $sickLeave), 1, 0, 'C');
+        $pdf->Cell(25, 8, iconv('utf-8', 'cp874', $leave), 1, 0, 'C');
+        $pdf->Cell(25, 8, iconv('utf-8', 'cp874', $absent), 1, 0, 'C');
+        $pdf->Cell(25, 8, iconv('utf-8', 'cp874', $skip), 1, 0, 'C');
+
+        $total = $student['count_sick_leave'] + $student['count_leave'] + $student['count_absent'] + $student['count_skip'];
+        $total = $total == 0 ? '-' : $total;
+        $pdf->Cell(25, 8, iconv('utf-8', 'cp874', $total), 1, 1, 'C');
+
+        // บวกค่าเพื่อรวม
+        $totalSickLeaveCount += $student['count_sick_leave'];
+        $totalLeaveCount += $student['count_leave'];
+        $totalAbsentCount += $student['count_absent'];
+        $totalSkipCount += $student['count_skip'];
+
+        $counter++;
     }
-} else {
-    $pdf->Cell(0, 10, iconv('utf-8', 'cp874', 'ไม่มีข้อมูลนักเรียนที่ขาด'), 0, 1, 'C');
-}
 
-$pdf->Cell(165, 8, iconv('utf-8', 'cp874', 'รวม' . ' '), 1, 0, 'R');
-$pdf->Cell(25, 8, iconv('utf-8', 'cp874', '' . ' ' . $totalCount), 1, 0, 'C');
-$pdf->Cell(0, 30, iconv('utf-8', 'cp874', ''), 0, 1, 'C');
+
+    $pdf->Cell(245, 8, iconv('utf-8', 'cp874', 'รวมทั้งหมด'), 1, 0, 'C');
+    $finalTotal = $totalSickLeaveCount + $totalLeaveCount + $totalAbsentCount + $totalSkipCount;
+    $finalTotal = $finalTotal == 0 ? '-' : $finalTotal;
+    $pdf->Cell(25, 8, iconv('utf-8', 'cp874', $finalTotal), 1, 1, 'C');
+    $pdf->Cell(0, 30, iconv('utf-8', 'cp874', ''), 0, 1, 'C');
+} else {
+    $pdf->SetFont('THSarabunPSK', '', '16');
+    $pdf->Cell(0, 7, iconv('utf-8', 'cp874', 'ไม่พบข้อมูล'), 0, 1, 'C');
+}
 
 $pdf->Cell(65, 8, iconv('utf-8', 'cp874', 'ลงชื่อ .................................................'), 0, 0, 'C');
 $pdf->Cell(65, 8, iconv('utf-8', 'cp874', 'ลงชื่อ .................................................'), 0, 0, 'C');
@@ -185,9 +209,9 @@ if ($courseData) {
     $pdf->Cell(65, 7, iconv('utf-8', 'cp874', '(' . $name . ')'), 0, 1, 'C');
 }
 
-$pdf->Cell(65, 7, iconv('utf-8', 'cp874', 'ผู้ช่วยรองผู้อำนวยการฝ่ายวิชาการ'), 0, 0, 'C');
+$pdf->Cell(65, 7, iconv('utf-8', 'cp874', 'หัวหน้าฝ่ายบริหารวิชาการ'), 0, 0, 'C');
 $pdf->Cell(65, 7, iconv('utf-8', 'cp874', 'รองผู้อำนวยการโรงเรียนถ้ำปินวิทยาคม'), 0, 0, 'C');
-$pdf->Cell(0, 7, iconv('utf-8', 'cp874', 'ผู้อำนวยการโรงเรียนถ้ำปินวิทยาคม'), 0, 1, 'C');
+$pdf->Cell(65, 7, iconv('utf-8', 'cp874', 'ผู้อำนวยการโรงเรียนถ้ำปินวิทยาคม'), 0, 1, 'C');
 ob_end_clean();
 $filename = "report_" . date('Y-m-d') . ".pdf";
 
